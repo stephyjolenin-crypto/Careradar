@@ -1,4 +1,5 @@
 import math
+from datetime import datetime
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
@@ -87,3 +88,27 @@ def rank(req: RankRequest):
 
     results.sort(key=lambda r: r["score"], reverse=True)
     return results
+
+ALERTS = []  # kept in memory for now; a database comes later
+
+
+class AlertRequest(BaseModel):
+    hospital_id: int
+    type: str
+    eta_min: int
+
+
+@app.post("/alert")
+def alert(req: AlertRequest):
+    ALERTS.append({
+        "hospital_id": req.hospital_id,
+        "type": req.type,
+        "eta_min": req.eta_min,
+        "created_at": datetime.now().isoformat(),
+    })
+    return {"ok": True}
+
+
+@app.get("/alerts/{hospital_id}")
+def alerts_for_hospital(hospital_id: int):
+    return [a for a in ALERTS if a["hospital_id"] == hospital_id]
