@@ -144,23 +144,31 @@ def keyword_fallback(text):
     return "accident"
 
 
+import time
+
+MODELS = ["gemini-3.8-flash", "gemini-3.5-flash-lite"]  # use names from your own model list
+
+
 @app.post("/triage")
 def triage(req: TriageRequest):
-    try:
-        reply = client.models.generate_content(
-            model="gemini-3.8-flash",
-            contents=req.text,
-            config=types.GenerateContentConfig(
-                system_instruction=TRIAGE_PROMPT,
-                response_mime_type="application/json",
-                max_output_tokens=1000,
-            ),
-        )
-        data = json.loads(reply.text.strip())
-        if data.get("type") in ("cardiac", "stroke", "accident", "pregnancy"):
-            return data
-    except Exception as e:
-        print("Triage error:", e)
+    for model in MODELS:
+        for attempt in range(2):
+            try:
+                reply = client.models.generate_content(
+                    model=model,
+                    contents=req.text,
+                    config=types.GenerateContentConfig(
+                        system_instruction=TRIAGE_PROMPT,
+                        response_mime_type="application/json",
+                        max_output_tokens=1000,
+                    ),
+                )
+                data = json.loads(reply.text.strip())
+                if data.get("type") in ("cardiac", "stroke", "accident", "pregnancy"):
+                    return data
+            except Exception as e:
+                print("Triage error:", model, e)
+                time.sleep(1.5)
     return {
         "type": keyword_fallback(req.text),
         "urgency": "urgent",
