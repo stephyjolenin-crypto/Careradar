@@ -1,10 +1,17 @@
 import math
+import json
+import os
 from datetime import datetime
+from dotenv import load_dotenv
+from google import genai
+from google.genai import types
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 
 app = FastAPI()
+load_dotenv(override=True)
+client = genai.Client(api_key=os.getenv("GEMINI_API_KEY", "").strip())
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -112,3 +119,50 @@ def alert(req: AlertRequest):
 @app.get("/alerts/{hospital_id}")
 def alerts_for_hospital(hospital_id: int):
     return [a for a in ALERTS if a["hospital_id"] == hospital_id]
+
+# Person 4 will improve this prompt. Edit only the text between the quotes.
+TRIAGE_PROMPT = """You are an emergency triage assistant for hospitals in India.
+The user describes a medical problem in Tamil, Hindi or English.
+Reply ONLY with JSON, no other text, in this exact format:
+{"type": "cardiac|stroke|accident|pregnancy", "urgency": "critical|urgent|routine", "message": "one short sentence in the user's own language telling them what kind of hospital to go to. If urgency is critical, tell them to call 108."}
+This is guidance only, not a diagnosis."""
+
+
+class TriageRequest(BaseModel):
+    text: str
+    lang: str = "en"
+
+
+def keyword_fallback(text):
+    t = text.lower()
+    if any(w in t for w in ["chest", "heart", "நெஞ்சு", "सीने", "दिल"]):
+        return "cardiac"
+    if any(w in t for w in ["stroke", "பக்கவாதம்", "लकवा", "slur", "face"]):
+        return "stroke"
+    if any(w in t for w in ["pregnan", "labour", "labor", "கர்ப்ப", "गर्भ"]):
+        return "pregnancy"
+    return "accident"
+
+
+@app.post("/triage")
+def triage(req: TriageRequest):
+    try:
+        reply = client.models.generate_content(
+            model="gemini-3.8-flash",
+            contents=req.text,
+            config=types.GenerateContentConfig(
+                system_instruction=TRIAGE_PROMPT,
+                response_mime_type="application/json",
+                max_output_tokens=1000,
+            ),
+        )
+        data = json.loads(reply.text.strip())
+        if data.get("type") in ("cardiac", "stroke", "accident", "pregnancy"):
+            return data
+    except Exception as e:
+        print("Triage error:", e)
+    return {
+        "type": keyword_fallback(req.text),
+        "urgency": "urgent",
+        "message": "Go to the top-ranked hospital. Call 108 if the person is struggling to breathe or unresponsive.",
+    }
