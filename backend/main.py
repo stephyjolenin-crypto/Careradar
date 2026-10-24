@@ -146,7 +146,7 @@ def keyword_fallback(text):
 
 import time
 
-MODELS = ["gemini-3.8-flash", "gemini-3.5-flash-lite"]  # use names from your own model list
+MODELS = ["gemini-flash-lite-latest", "gemini-3.5-flash-lite"]  # use names from your own model list
 
 
 @app.post("/triage")
