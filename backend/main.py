@@ -1,7 +1,9 @@
 import math
 import json
 import os
-from datetime import datetime
+import time
+from datetime import datetime, timezone
+from supabase import create_client
 from dotenv import load_dotenv
 from google import genai
 from google.genai import types
@@ -19,17 +21,23 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Fake demo data. Person 2's database will replace this later.
+sb = None
+try:
+    sb = create_client(os.getenv("SUPABASE_URL", "").strip(), os.getenv("SUPABASE_KEY", "").strip())
+except Exception as e:
+    print("Supabase error:", e)
+
+# Backup demo data, used only if Supabase cannot be reached.
 HOSPITALS = [
     {"id": 1, "name": "Chettinad Health City", "lat": 12.7957, "lng": 80.2231,
      "specialties": ["cardiac", "stroke", "accident", "pregnancy"],
-     "has_ct": True, "has_trauma": True, "icu_free": 0, "beds_free": 22, "minutes_old": 3},
+     "has_ct": True, "has_trauma": True, "icu_free": 4, "beds_free": 22, "minutes_old": 3},
     {"id": 2, "name": "Apollo Speciality OMR", "lat": 12.9066, "lng": 80.2299,
      "specialties": ["cardiac", "accident", "pregnancy"],
      "has_ct": True, "has_trauma": False, "icu_free": 2, "beds_free": 9, "minutes_old": 6},
     {"id": 3, "name": "MIOT International", "lat": 13.0226, "lng": 80.1851,
      "specialties": ["cardiac", "stroke", "accident"],
-     "has_ct": True, "has_trauma": True, "icu_free": 0, "beds_free": 12, "minutes_old": 4},
+     "has_ct": True, "has_trauma": True, "icu_free": 1, "beds_free": 12, "minutes_old": 4},
     {"id": 4, "name": "Fortis Malar Adyar", "lat": 13.0067, "lng": 80.2570,
      "specialties": ["cardiac", "stroke", "pregnancy"],
      "has_ct": True, "has_trauma": False, "icu_free": 5, "beds_free": 14, "minutes_old": 52},
@@ -42,6 +50,37 @@ WEIGHTS = {
     "accident": (0.35, 0.25, 0.25, 0.15),
     "pregnancy": (0.25, 0.30, 0.30, 0.15),
 }
+
+
+def get_hospitals():
+    """Read hospitals from Supabase. If anything fails, use the demo list."""
+    if sb:
+        try:
+            rows = sb.table("hospitals").select("*").execute().data
+            if rows:
+                now = datetime.now(timezone.utc)
+                out = []
+                for r in rows:
+                    age = 0
+                    if r.get("updated_at"):
+                        t = datetime.fromisoformat(r["updated_at"].replace("Z", "+00:00"))
+                        age = max(0, int((now - t).total_seconds() / 60))
+                    out.append({
+                        "id": r["id"],
+                        "name": r.get("name", "Hospital"),
+                        "lat": float(r["lat"]),
+                        "lng": float(r["lng"]),
+                        "specialties": r.get("specialties") or [],
+                        "has_ct": bool(r.get("has_ct")),
+                        "has_trauma": bool(r.get("has_trauma")),
+                        "icu_free": int(r.get("icu_free") or 0),
+                        "beds_free": int(r.get("beds_free") or 0),
+                        "minutes_old": age,
+                    })
+                return out
+        except Exception as e:
+            print("Supabase read error:", e)
+    return HOSPITALS
 
 
 class RankRequest(BaseModel):
@@ -57,6 +96,11 @@ def distance_km(lat1, lng1, lat2, lng2):
     return 12742 * math.asin(math.sqrt(a))
 
 
+@app.get("/")
+def home():
+    return {"app": "CareRadar API", "status": "running", "docs": "/docs"}
+
+
 @app.get("/health")
 def health():
     return {"ok": True}
@@ -66,7 +110,7 @@ def health():
 def rank(req: RankRequest):
     w = WEIGHTS.get(req.type, WEIGHTS["cardiac"])
     results = []
-    for h in HOSPITALS:
+    for h in get_hospitals():
         km = distance_km(req.lat, req.lng, h["lat"], h["lng"])
         eta = round(km * 1.4 / 28 * 60)  # rough minutes by road
         resource = h["icu_free"] if req.type in ("cardiac", "stroke") else h["beds_free"]
@@ -96,7 +140,8 @@ def rank(req: RankRequest):
     results.sort(key=lambda r: r["score"], reverse=True)
     return results
 
-ALERTS = []  # kept in memory for now; a database comes later
+
+ALERTS = []  # kept in memory as a backup copy
 
 
 class AlertRequest(BaseModel):
@@ -107,18 +152,24 @@ class AlertRequest(BaseModel):
 
 @app.post("/alert")
 def alert(req: AlertRequest):
-    ALERTS.append({
+    record = {
         "hospital_id": req.hospital_id,
-        "type": req.type,
+        "emergency_type": req.type,
         "eta_min": req.eta_min,
-        "created_at": datetime.now().isoformat(),
-    })
+    }
+    ALERTS.append({**record, "type": req.type, "created_at": datetime.now().isoformat()})
+    if sb:
+        try:
+            sb.table("alerts").insert(record).execute()
+        except Exception as e:
+            print("Supabase alert error:", e)
     return {"ok": True}
 
 
 @app.get("/alerts/{hospital_id}")
 def alerts_for_hospital(hospital_id: int):
     return [a for a in ALERTS if a["hospital_id"] == hospital_id]
+
 
 # Person 4 will improve this prompt. Edit only the text between the quotes.
 TRIAGE_PROMPT = """You are an emergency triage assistant for hospitals in India.
@@ -143,8 +194,6 @@ def keyword_fallback(text):
         return "pregnancy"
     return "accident"
 
-
-import time
 
 MODELS = ["gemini-flash-lite-latest", "gemini-3.5-flash-lite"]  # use names from your own model list
 
@@ -174,3 +223,5 @@ def triage(req: TriageRequest):
         "urgency": "urgent",
         "message": "Go to the top-ranked hospital. Call 108 if the person is struggling to breathe or unresponsive.",
     }
+    
+
