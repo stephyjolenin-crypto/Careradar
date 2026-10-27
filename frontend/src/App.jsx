@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { MapContainer, TileLayer, CircleMarker, Popup, useMap } from "react-leaflet";
 import "leaflet/dist/leaflet.css";
+import BedPanel from "./BedPanel.jsx";
 
 const API = import.meta.env.VITE_API_URL;
 const FALLBACK = { lat: 12.8728, lng: 80.2257 };
@@ -276,6 +277,7 @@ export default function App() {
       })}
       <p style={{ color: "#5b6785", fontSize: 12 }}>
         Demo data: bed availability is simulated. AI triage is guidance only.
+              <BedPanel />
       </p>
     </div>
   );
