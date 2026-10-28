@@ -6,24 +6,36 @@ import BedPanel from "./BedPanel.jsx";
 const API = import.meta.env.VITE_API_URL;
 const FALLBACK = { lat: 12.8728, lng: 80.2257 };
 const TYPES = [
-  ["cardiac", "❤️ Cardiac"],
-  ["stroke", "🧠 Stroke"],
-  ["accident", "🚑 Accident"],
-  ["pregnancy", "🤰 Pregnancy"],
+  ["cardiac", "❤️", "Cardiac", "Chest pain, heart attack"],
+  ["stroke", "🧠", "Stroke", "Face drooping, slurred speech"],
+  ["accident", "🚑", "Accident", "Injury, bleeding, trauma"],
+  ["pregnancy", "🤰", "Pregnancy", "Labour, delivery, complications"],
 ];
 
 function Recenter({ pos }) {
   const map = useMap();
   useEffect(() => {
-    map.setView([pos.lat, pos.lng], 11);
+    map.flyTo([pos.lat, pos.lng], 11, { duration: 1.2 });
   }, [pos.lat, pos.lng]);
   return null;
 }
 
+function ago(min) {
+  if (min < 60) return `${min}m`;
+  if (min < 1440) return `${Math.round(min / 60)}h`;
+  return `${Math.round(min / 1440)}d`;
+}
+
 function badge(age) {
-  if (age <= 15) return ["Live", "#1f9d55"];
-  if (age <= 40) return ["Aging", "#c98a00"];
-  return ["Stale", "#d92d20"];
+  if (age <= 15) return ["Live", "live"];
+  if (age <= 40) return ["Aging", "aging"];
+  return ["Stale", "stale"];
+}
+
+function barColor(score) {
+  if (score >= 60) return "#1f9d55";
+  if (score >= 35) return "#f08a2c";
+  return "#e5484d";
 }
 
 export default function App() {
@@ -36,6 +48,7 @@ export default function App() {
   const [triage, setTriage] = useState(null);
   const [alerted, setAlerted] = useState(null);
   const typeRef = useRef(null);
+  const resultsRef = useRef(null);
 
   useEffect(() => {
     fetch(`${API}/health`).catch(() => {}); // wakes the free server early
@@ -61,6 +74,9 @@ export default function App() {
       });
       if (!r.ok) throw new Error("bad response");
       setResults(await r.json());
+      if (!silent) {
+        setTimeout(() => resultsRef.current?.scrollIntoView({ behavior: "smooth", block: "start" }), 150);
+      }
     } catch {
       if (!silent) setError("Could not reach the server. Please try again.");
     }
@@ -111,101 +127,67 @@ export default function App() {
     );
   }
 
-  const card = {
-    background: "#fff",
-    border: "1px solid #dbe1ee",
-    borderRadius: 12,
-    padding: 12,
-    marginTop: 10,
-    color: "#1b2a4a",
-  };
-
   return (
-    <div
-      style={{
-        maxWidth: 560,
-        margin: "0 auto",
-        padding: 12,
-        fontFamily: "system-ui, sans-serif",
-        background: "#f4f6fb",
-        minHeight: "100vh",
-      }}
-    >
-      <h2 style={{ margin: "4px 0", color: "#1b2a4a" }}>
-        Care<span style={{ color: "#f08a2c" }}>Radar</span>
-      </h2>
-      <p style={{ margin: "0 0 8px", color: "#5b6785" }}>
-        The right hospital, right now. Call 108 in an emergency.
-      </p>
+    <div className="app">
+      <div className="header">
+        <div className="radar"><i /></div>
+        <div className="logo">Care<span>Radar</span></div>
+        <div className="live-pill">● Live data</div>
+      </div>
 
-      <div style={{ display: "grid", gridTemplateColumns: "repeat(2, 1fr)", gap: 8 }}>
-        {TYPES.map(([k, label]) => (
+      <div className="hero">
+        <h1>The right hospital, right now.</h1>
+        <p>Live ICU, bed and ventilator availability, ranked for your emergency.</p>
+        <a className="sos" href="tel:108">📞 Call 108 for an ambulance</a>
+      </div>
+
+      <div className="section-title">What is the emergency?</div>
+      <div className="types">
+        {TYPES.map(([k, emoji, label, hint], i) => (
           <button
             key={k}
+            className={`type ${type === k ? "active" : ""}`}
+            style={{ animationDelay: `${i * 70}ms` }}
             onClick={() => rank(k)}
-            style={{
-              padding: 14,
-              fontSize: 16,
-              fontWeight: 700,
-              borderRadius: 12,
-              border: "none",
-              background: type === k ? "#f08a2c" : "#263b6b",
-              color: "#fff",
-            }}
           >
-            {label}
+            <span className="emoji">{emoji}</span>
+            <b>{label}</b>
+            <small>{hint}</small>
           </button>
         ))}
       </div>
 
-      <div style={card}>
-        <b>Describe the problem (English, Tamil or Hindi)</b>
+      <div className="card triage">
+        <b>Not sure? Describe it in English, Tamil or Hindi</b>
         <textarea
           value={text}
           onChange={(e) => setText(e.target.value)}
           rows={2}
-          style={{ width: "100%", marginTop: 6, padding: 8, fontSize: 15, boxSizing: "border-box" }}
           placeholder="e.g. நெஞ்சு வலி / सीने में दर्द / chest pain"
         />
-        <button
-          onClick={askTriage}
-          style={{
-            marginTop: 6,
-            padding: 10,
-            width: "100%",
-            borderRadius: 10,
-            border: "none",
-            background: "#f08a2c",
-            color: "#fff",
-            fontWeight: 700,
-          }}
-        >
-          Find the right care
-        </button>
+        <button className="btn" onClick={askTriage}>Find the right care</button>
         {triage && (
-          <p style={{ margin: "8px 0 0" }}>
-            <b>{triage.type.toUpperCase()}</b> · {triage.urgency}
-            <br />
-            {triage.message}
-          </p>
+          <div className="triage-out">
+            <span className="tag type-tag">{triage.type.toUpperCase()}</span>
+            <span className={`tag ${triage.urgency}`}>{triage.urgency}</span>
+            <div style={{ marginTop: 8 }}>{triage.message}</div>
+          </div>
         )}
       </div>
 
-      {loading && <p style={{ color: "#5b6785" }}>Finding the best hospital…</p>}
-      {error && <p style={{ color: "#d92d20" }}>{error}</p>}
+      {loading && (
+        <div className="status"><span className="spinner" />Finding the best hospital…</div>
+      )}
+      {error && <div className="status err">{error}</div>}
 
-      <div style={{ height: 260, marginTop: 10, borderRadius: 12, overflow: "hidden" }}>
+      <div className="map-wrap">
         <MapContainer center={[pos.lat, pos.lng]} zoom={11} style={{ height: "100%", width: "100%" }}>
           <Recenter pos={pos} />
-          <TileLayer
+         <TileLayer
             attribution="© OpenStreetMap contributors"
             url="https://tile.openstreetmap.org/{z}/{x}/{y}.png"
           />
-          <CircleMarker
-            center={[pos.lat, pos.lng]}
-            radius={8}
-            pathOptions={{ color: "#2b7fff", fillOpacity: 1 }}
-          >
+          <CircleMarker center={[pos.lat, pos.lng]} radius={8} pathOptions={{ color: "#2b7fff", fillOpacity: 1 }}>
             <Popup>You are here</Popup>
           </CircleMarker>
           {results.map((r, i) => (
@@ -213,10 +195,7 @@ export default function App() {
               key={r.hospital.id}
               center={[r.hospital.lat, r.hospital.lng]}
               radius={i === 0 ? 12 : 8}
-              pathOptions={{
-                color: r.score < 30 ? "#d92d20" : i === 0 ? "#1f9d55" : "#f08a2c",
-                fillOpacity: 0.9,
-              }}
+              pathOptions={{ color: barColor(r.score), fillOpacity: 0.9 }}
             >
               <Popup>
                 {i + 1}. {r.hospital.name}
@@ -228,57 +207,55 @@ export default function App() {
         </MapContainer>
       </div>
 
+      <div ref={resultsRef} />
+      {type && <div className="section-title">Best hospitals for {type}</div>}
+
+      {loading && results.length === 0 && (
+        <>
+          <div className="skeleton" />
+          <div className="skeleton" />
+          <div className="skeleton" />
+        </>
+      )}
+
       {results.slice(0, 4).map((r, i) => {
-        const [label, color] = badge(r.age_min);
+        const [label, cls] = badge(r.age_min);
         const h = r.hospital;
         return (
-          <div key={h.id} style={card}>
-            <div style={{ display: "flex", justifyContent: "space-between" }}>
-              <b>
-                {i + 1}. {h.name}
-              </b>
-              <b style={{ fontSize: 20, color: "#263b6b" }}>{r.score}</b>
+          <div
+            key={`${type}-${h.id}`}
+            className={`card result ${i === 0 ? "best" : ""}`}
+            style={{ animationDelay: `${i * 90}ms` }}
+          >
+            {i === 0 && <div className="best-flag">★ BEST MATCH</div>}
+            <div className="r-top">
+              <div className="rank-no">{i + 1}</div>
+              <div className="r-name">{h.name}</div>
+              <div className="r-score">{r.score}</div>
             </div>
-            <div style={{ color: "#5b6785", fontSize: 14 }}>
-              {r.eta_min} min away ·{" "}
-              <span
-                style={{
-                  background: color,
-                  color: "#fff",
-                  borderRadius: 99,
-                  padding: "1px 8px",
-                  fontSize: 12,
-                }}
-              >
-                {label} {r.age_min}m
-              </span>
+            <div className="bar">
+              <div style={{ width: `${Math.min(100, r.score)}%`, background: barColor(r.score) }} />
             </div>
-            <div style={{ margin: "6px 0" }}>
-              ICU <b>{h.icu_free}</b> · Beds <b>{h.beds_free}</b>
+            <div className="chips">
+              <span className="chip">🕒 {r.eta_min} min</span>
+              <span className="chip">ICU {h.icu_free}</span>
+              <span className="chip">Beds {h.beds_free}</span>
+              <span className={`chip ${cls}`}>{label} · {ago(r.age_min)}</span>
             </div>
             {i === 0 && (
-              <button
-                onClick={() => alertER(h, r.eta_min)}
-                style={{
-                  width: "100%",
-                  padding: 10,
-                  borderRadius: 10,
-                  border: "none",
-                  background: "#f08a2c",
-                  color: "#fff",
-                  fontWeight: 700,
-                }}
-              >
-                {alerted === h.id ? "ER alerted ✓ Opening route…" : "Alert ER and navigate"}
+              <button className={`btn ${alerted === h.id ? "done" : ""}`} onClick={() => alertER(h, r.eta_min)}>
+                {alerted === h.id ? "✓ ER alerted · opening route…" : "🚨 Alert ER and navigate"}
               </button>
             )}
           </div>
         );
       })}
-      <p style={{ color: "#5b6785", fontSize: 12 }}>
-        Demo data: bed availability is simulated. AI triage is guidance only.
-              <BedPanel />
-      </p>
+
+      <BedPanel />
+
+      <div className="footer">
+        Demo data: bed availability is simulated. AI triage is guidance only, not a diagnosis.
+      </div>
     </div>
   );
 }
