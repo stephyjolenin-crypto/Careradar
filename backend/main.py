@@ -27,7 +27,6 @@ try:
 except Exception as e:
     print("Supabase error:", e)
 
-# Backup demo data, used only if Supabase cannot be reached.
 HOSPITALS = [
     {"id": 1, "name": "Chettinad Health City", "lat": 12.7957, "lng": 80.2231,
      "specialties": ["cardiac", "stroke", "accident", "pregnancy"],
@@ -43,7 +42,6 @@ HOSPITALS = [
      "has_ct": True, "has_trauma": False, "icu_free": 5, "beds_free": 14, "minutes_old": 52},
 ]
 
-# Weights: (closeness, availability, specialty match, fresh data)
 WEIGHTS = {
     "cardiac": (0.30, 0.30, 0.25, 0.15),
     "stroke": (0.35, 0.20, 0.30, 0.15),
@@ -112,7 +110,7 @@ def rank(req: RankRequest):
     results = []
     for h in get_hospitals():
         km = distance_km(req.lat, req.lng, h["lat"], h["lng"])
-        eta = round(km * 1.4 / 28 * 60)  # rough minutes by road
+        eta = round(km * 1.4 / 28 * 60)  
         resource = h["icu_free"] if req.type in ("cardiac", "stroke") else h["beds_free"]
 
         spec = 0.6 if req.type in h["specialties"] else 0
@@ -128,7 +126,7 @@ def rank(req: RankRequest):
         fresh = max(0, 1 - h["minutes_old"] / 60)
         score = w[0] * close + w[1] * avail + w[2] * min(spec, 1) + w[3] * fresh
         if resource == 0:
-            score *= 0.4  # no free bed: push it down the list
+            score *= 0.4  
 
         results.append({
             "hospital": h,
@@ -141,7 +139,7 @@ def rank(req: RankRequest):
     return results
 
 
-ALERTS = []  # kept in memory as a backup copy
+ALERTS = []  
 
 
 class AlertRequest(BaseModel):
@@ -171,7 +169,6 @@ def alerts_for_hospital(hospital_id: int):
     return [a for a in ALERTS if a["hospital_id"] == hospital_id]
 
 
-# Person 4 will improve this prompt. Edit only the text between the quotes.
 TRIAGE_PROMPT = """You are an emergency triage assistant for hospitals in India.
 The user describes a medical problem in Tamil, Hindi or English.
 Reply ONLY with JSON, no other text, in this exact format:
@@ -195,7 +192,7 @@ def keyword_fallback(text):
     return "accident"
 
 
-MODELS = ["gemini-flash-lite-latest", "gemini-3.5-flash-lite"]  # use names from your own model list
+MODELS = ["gemini-flash-lite-latest", "gemini-3.5-flash-lite"]  
 
 
 @app.post("/triage")
