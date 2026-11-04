@@ -2,6 +2,7 @@ import math
 import json
 import os
 import time
+import logging
 from typing import Optional
 from datetime import datetime, timezone
 
@@ -10,20 +11,32 @@ from supabase import create_client
 from dotenv import load_dotenv
 from google import genai
 from google.genai import types
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Request
+from fastapi.responses import JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 
 app = FastAPI()
 load_dotenv(override=True)
 client = genai.Client(api_key=os.getenv("GEMINI_API_KEY", "").strip())
+logging.basicConfig(level=logging.INFO)
+log = logging.getLogger("careradar")
+
+# Which websites may call this API. Set ALLOWED_ORIGINS on Render to your
+# Vercel link (comma separated). If it is not set, any site is allowed.
+origins = [o.strip() for o in os.getenv("ALLOWED_ORIGINS", "*").split(",") if o.strip()]
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=origins,
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
+
+@app.exception_handler(Exception)
+async def unhandled_error(request: Request, exc: Exception):
+    log.exception("Unhandled error on %s", request.url.path)
+    return JSONResponse(status_code=500, content={"detail": "Something went wrong. Please try again."})
 OSRM = "https://router.project-osrm.org"
 VALID_TYPES = ("cardiac", "stroke", "accident", "pregnancy")
 
